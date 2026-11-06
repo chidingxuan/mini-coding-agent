@@ -46,7 +46,7 @@ class WebTests(unittest.TestCase):
         response = self.client.post("/chat", json={"conversation_id": "blank-test", "question": "  \n "})
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["detail"]["code"], "invalid_input")
-        self.assertNotIn("blank-test", api.conversations)
+        self.assertEqual(api.load_history("blank-test"), [])
 
     def test_missing_configuration_does_not_call_model_or_save_history(self):
         previous_key = api.api_key
@@ -57,7 +57,7 @@ class WebTests(unittest.TestCase):
             api.api_key = previous_key
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"]["code"], "configuration_error")
-        self.assertNotIn("config-test", api.conversations)
+        self.assertEqual(api.load_history("config-test"), [])
 
 
 if __name__ == "__main__":

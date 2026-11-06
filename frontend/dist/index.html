@@ -32,6 +32,14 @@
           ><span id="session-title">新的代码对话</span
           ><span class="session-live">当前</span>
         </div>
+        <section class="history-section" aria-label="已保存的会话">
+          <div class="sidebar-section-label">
+            已保存的会话
+            <button id="refresh-history" class="history-refresh" type="button">刷新</button>
+          </div>
+          <p id="history-notice" class="history-notice" role="status">正在读取会话列表…</p>
+          <div id="history-list" class="history-list"></div>
+        </section>
         <div class="scope-section">
           <div class="sidebar-section-label">
             可读取的项目文件 <span>03</span>
@@ -71,6 +79,7 @@
             ><strong>对话</strong>
           </div>
           <div class="topbar-right">
+            <button id="open-history" class="history-open" type="button">历史会话</button>
             <span class="model-tag">DeepSeek<span>真实 API</span></span
             ><a
               class="docs-link"
@@ -188,7 +197,7 @@
             <span
               >Enter 发送 <span aria-hidden="true">·</span> Shift + Enter
               换行</span
-            ><span>刷新网页会开启新会话；服务重启后上下文清空。</span>
+            ><span>成功对话保存在本机数据库，可从历史会话继续。</span>
           </div>
           <footer class="workspace-footer">
             <span>LOCAL SESSION <code id="session-id"></code></span
@@ -208,6 +217,25 @@
         <div class="dialog-actions">
           <button value="cancel" class="secondary-button">保留当前对话</button
           ><button value="new" class="primary-button">开启新对话</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="history-dialog" aria-labelledby="history-dialog-title">
+      <form method="dialog" class="history-dialog-heading">
+        <h2 id="history-dialog-title">已保存的会话</h2>
+        <button class="secondary-button" aria-label="关闭历史会话">关闭</button>
+      </form>
+      <p>选择一个会话恢复消息并继续提问。读取历史不会调用模型。</p>
+      <p id="history-dialog-notice" class="history-notice" role="status"></p>
+      <div id="history-dialog-list" class="history-list"></div>
+    </dialog>
+    <dialog id="switch-history-dialog" aria-labelledby="switch-history-title">
+      <form method="dialog">
+        <h2 id="switch-history-title">切换到旧会话？</h2>
+        <p>尚未发送的问题会被清空。已保存的对话不会删除，也不会发送模型请求。</p>
+        <div class="dialog-actions">
+          <button value="cancel" class="secondary-button">保留草稿</button>
+          <button value="switch" class="primary-button">放弃草稿并切换</button>
         </div>
       </form>
     </dialog>

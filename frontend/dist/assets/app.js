@@ -1,6 +1,6 @@
 "use strict";
 
-// 页面只调用同源 /chat；密钥、模型客户端和工具执行都留在 Python 后端。
+// 页面只调用同源聊天与历史接口；密钥、模型客户端和工具执行都留在 Python 后端。
 const form = document.querySelector("#chat-form");
 const question = document.querySelector("#question");
 const send = document.querySelector("#send");
@@ -11,11 +11,21 @@ const scrollArea = document.querySelector("#conversation-scroll");
 const status = document.querySelector("#request-status");
 const newChat = document.querySelector("#new-chat");
 const dialog = document.querySelector("#new-chat-dialog");
+const historyDialog = document.querySelector("#history-dialog");
+const switchHistoryDialog = document.querySelector("#switch-history-dialog");
+const openHistory = document.querySelector("#open-history");
+const refreshHistory = document.querySelector("#refresh-history");
+const historyLists = [document.querySelector("#history-list"), document.querySelector("#history-dialog-list")];
+const historyNotices = [document.querySelector("#history-notice"), document.querySelector("#history-dialog-notice")];
 const suggestions = [...document.querySelectorAll("[data-prompt]")];
 let conversationId = crypto.randomUUID();
 let busy = false;
 let turnCount = 0;
 let toastTimer;
+let savedConversationIds = [];
+let historyFetchVersion = 0;
+let pendingHistoryId = null;
+const conversationTitles = new Map();
 
 function updateSessionLabel() {
   const label = document.querySelector("#session-id");
@@ -37,6 +47,11 @@ function setBusy(value) {
   question.readOnly = value;
   newChat.disabled = value;
   document.querySelector("#new-chat-mobile").disabled = value;
+  openHistory.disabled = value;
+  refreshHistory.disabled = value;
+  document.querySelectorAll("[data-conversation-id]").forEach((button) => {
+    button.disabled = value;
+  });
   suggestions.forEach((button) => {
     button.disabled = value;
   });
@@ -56,6 +71,111 @@ function showToast(text) {
   toastTimer = setTimeout(() => {
     toast.hidden = true;
   }, 3000);
+}
+
+function renderHistoryLists() {
+  for (const list of historyLists) {
+    list.replaceChildren();
+    for (const id of savedConversationIds) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "history-item";
+      button.dataset.conversationId = id;
+      button.disabled = busy;
+      button.title = id;
+      const title = document.createElement("span");
+      title.textContent = conversationTitles.get(id) || `会话 ${id.slice(0, 8)}`;
+      button.append(title);
+      if (id === conversationId) {
+        button.setAttribute("aria-current", "true");
+        const current = document.createElement("small");
+        current.textContent = "当前";
+        button.append(current);
+      }
+      button.addEventListener("click", () => switchConversation(id));
+      list.append(button);
+    }
+  }
+}
+
+async function refreshConversations() {
+  const version = ++historyFetchVersion;
+  historyNotices.forEach((notice) => { notice.textContent = "正在读取会话列表…"; });
+  try {
+    const response = await fetch("/conversations", { cache: "no-store" });
+    if (!response.ok) throw new Error("history_list_failed");
+    const data = await response.json();
+    if (!Array.isArray(data?.conversations) || !data.conversations.every(
+      (id) => typeof id === "string" && id.length > 0 && id.length <= 100,
+    )) throw new Error("invalid_history_list");
+    if (version !== historyFetchVersion) return;
+    savedConversationIds = [...new Set(data.conversations)];
+    renderHistoryLists();
+    historyNotices.forEach((notice) => {
+      notice.textContent = savedConversationIds.length ? "" : "还没有已保存的会话，完成一次问答后会出现在这里。";
+    });
+  } catch {
+    if (version !== historyFetchVersion) return;
+    historyNotices.forEach((notice) => {
+      notice.textContent = "会话列表读取失败，请检查本地服务后手动刷新。";
+    });
+  }
+}
+
+function rememberConversation() {
+  const url = new URL(location.href);
+  url.hash = new URLSearchParams({ conversation: conversationId }).toString();
+  window.history.replaceState(null, "", url);
+}
+
+async function switchConversation(id, initial = false, discardDraft = false) {
+  if (busy) return;
+  if (id === conversationId) {
+    historyDialog.close();
+    return;
+  }
+  if (question.value.trim() && !discardDraft) {
+    pendingHistoryId = id;
+    switchHistoryDialog.returnValue = "cancel";
+    switchHistoryDialog.showModal();
+    return;
+  }
+  const previousStatus = status.textContent;
+  setBusy(true);
+  status.textContent = "正在从本机数据库读取历史，不会调用模型…";
+  try {
+    const response = await fetch(`/conversations/${encodeURIComponent(id)}/messages`, { cache: "no-store" });
+    if (!response.ok) throw new Error("history_failed");
+    const data = await response.json();
+    if (data?.conversation_id !== id || !Array.isArray(data.messages) || !data.messages.length ||
+        !data.messages.every((row) => row && ["user", "assistant"].includes(row.role) && typeof row.content === "string")) {
+      throw new Error("invalid_history");
+    }
+    // 验证读取结果成功后才切换，失败时保留原会话和草稿。
+    conversationId = id;
+    turnCount = data.messages.filter((row) => row.role === "assistant").length;
+    const title = data.messages.find((row) => row.role === "user")?.content || `会话 ${id.slice(0, 8)}`;
+    conversationTitles.set(id, title);
+    document.querySelector("#session-title").textContent = title;
+    messages.replaceChildren();
+    for (const row of data.messages) {
+      const message = addMessage(row.role, row.content);
+      if (row.role === "assistant") addCopyAction(message.article, row.content);
+    }
+    question.value = "";
+    updateSessionLabel();
+    rememberConversation();
+    renderHistoryLists();
+    status.textContent = `已恢复 ${turnCount} 轮对话 · 可以继续提问`;
+    historyDialog.close();
+  } catch {
+    status.textContent = previousStatus;
+    showToast("历史读取失败或会话不存在，当前对话未切换；请检查服务后手动重试。");
+    if (initial) window.history.replaceState(null, "", location.pathname + location.search);
+  } finally {
+    setBusy(false);
+    question.focus();
+  }
 }
 
 // 只创建文本节点和代码块，不把模型或用户的输出当作 HTML 执行。
@@ -231,7 +351,10 @@ form.addEventListener("submit", async (event) => {
     renderText(pending.content, data.answer);
     addCopyAction(pending.article, data.answer);
     turnCount += 1;
-    status.textContent = "本轮已完成 · 上下文保存在当前后端进程中";
+    conversationTitles.set(conversationId, document.querySelector("#session-title").textContent);
+    rememberConversation();
+    status.textContent = "本轮已完成 · 对话已保存到本机数据库";
+    void refreshConversations();
   } catch (error) {
     pending.content.replaceChildren();
     pending.content.classList.remove("pending-content");
@@ -293,6 +416,8 @@ function resetConversation() {
   document.querySelector("#session-title").textContent = "新的代码对话";
   status.textContent = "";
   updateSessionLabel();
+  window.history.replaceState(null, "", location.pathname + location.search);
+  renderHistoryLists();
   updateComposer();
   scrollArea.scrollTop = 0;
   question.focus();
@@ -300,6 +425,19 @@ function resetConversation() {
 }
 
 newChat.addEventListener("click", requestNewChat);
+refreshHistory.addEventListener("click", () => { if (!busy) void refreshConversations(); });
+openHistory.addEventListener("click", () => {
+  if (busy) return;
+  historyDialog.showModal();
+  void refreshConversations();
+});
+switchHistoryDialog.addEventListener("close", () => {
+  const id = pendingHistoryId;
+  pendingHistoryId = null;
+  if (switchHistoryDialog.returnValue === "switch" && id) {
+    void switchConversation(id, false, true);
+  }
+});
 dialog.addEventListener("close", () => {
   if (dialog.returnValue === "new") resetConversation();
 });
@@ -324,3 +462,6 @@ window.addEventListener("beforeunload", (event) => {
 document.querySelector("#local-address").textContent = location.host;
 updateSessionLabel();
 updateComposer();
+const restoredId = new URLSearchParams(location.hash.slice(1)).get("conversation");
+if (restoredId && restoredId.length <= 100) void switchConversation(restoredId, true);
+void refreshConversations();

@@ -11,7 +11,7 @@ READABLE_FILES = {
 }
 
 
-def read_file(path: str) -> str:
+def read_file(path: str) -> str: #阅读某个文件
     if not isinstance(path, str):
         raise AgentError("invalid_tool_arguments", "path必须是字符串")
     if Path(path).is_absolute():
@@ -76,10 +76,31 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_code",
+            "description": (
+                "在白名单代码文件中搜索区分大小写的字面关键词，"
+                "返回文件路径、行号和命中行，最多20条。不是语义搜索。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "要搜索的非空关键词，例如save_turn。",
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
     
-def execute_tool(name: str, arguments: str) -> str:
-    if not isinstance(name, str) or name not in {"read_file", "list_files"}:
+def execute_tool(name: str, arguments: str) -> str: #检查工具
+    if not isinstance(name, str) or name not in {"read_file", "list_files", "search_code"}:
         raise AgentError("tool_rejected", "不支持这个工具")
 
     if not isinstance(arguments, str):
@@ -98,7 +119,14 @@ def execute_tool(name: str, arguments: str) -> str:
             raise AgentError("invalid_tool_arguments", "list_files不接受参数")
 
         return json.dumps(list_files(), ensure_ascii=False)
+    if name == "search_code":
+        if set(args) != {"query"} or not isinstance(args["query"], str):
+            raise AgentError(
+                "invalid_tool_arguments",
+                "search_code必须且只能提供字符串query",
+            )
 
+        return json.dumps(search_code(args["query"]), ensure_ascii=False)
     # 读文件：必须只有一个字符串参数path
     if set(args) != {"path"}:
         raise AgentError("invalid_tool_arguments", "read_file必须且只能提供path")
@@ -110,7 +138,7 @@ def execute_tool(name: str, arguments: str) -> str:
     
 
 
-def list_files() -> list[str]:
+def list_files() -> list[str]: #列出所有文件
     files = []
 
     for path in sorted(READABLE_FILES):
@@ -118,3 +146,26 @@ def list_files() -> list[str]:
             files.append(path)
 
     return files
+
+def search_code(query: str) -> list[dict[str, str | int]]: #查找文件里有没有该关键词
+    if not isinstance(query, str) or not query.strip():
+        raise AgentError("invalid_tool_arguments", "query必须是非空字符串")
+
+    query = query.strip()
+    hits = []
+
+    for path in list_files():
+        content = read_file(path)
+
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            if query in line:
+                hits.append({
+                    "path": path,
+                    "line": line_number,
+                    "text": line[:300],
+                })
+
+                if len(hits) >= 20:
+                    return hits
+
+    return hits
