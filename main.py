@@ -3,7 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from backend.llm import ask_model
+from backend.llm import ask_agent
 # 1. 读取main.py同目录下的.env
 load_dotenv(Path(__file__).with_name(".env"))
 
@@ -35,7 +35,10 @@ with OpenAI(
                 {"role": "user", "content": question},
         ]
         try:
-            answer = ask_model(client= client, model=model, messages= message)
+            answer = ask_agent(client= client,
+                                model=model, 
+                                messages= message
+                        )
         except ValueError as error:
             print(error)
             continue

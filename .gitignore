@@ -9,3 +9,6 @@ __pycache__/
 runtime/
 *.sqlite3
 *.log
+
+# 个人研究Notebook：仅本地保留，不上传GitHub。
+/backend/ceshi.ipynb

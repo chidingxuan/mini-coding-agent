@@ -3,10 +3,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI,HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-from backend.llm import ask_model
+from backend.llm import ask_agent
 
 # api.py在backend中，因此向上两级找到项目根目录
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -16,6 +18,15 @@ api_key = os.getenv("DEEPSEEK_API_KEY")
 model = os.getenv("DEEPSEEK_MODEL")
 
 app = FastAPI()
+
+# 只公开前端资源目录，不挂载项目根目录，避免暴露.env和源文件。
+FRONTEND_DIR = PROJECT_DIR / "frontend" / "dist"
+app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 conversations: dict[str, list[dict[str, str]]] = {}
 
@@ -39,7 +50,7 @@ def chat(body: ChatRequest):
                 {"role": "user", "content": body.question},
         ]
         try:
-            answer = ask_model(client= client, model=model, messages= message)
+            answer = ask_agent(client= client, model=model, messages= message)
         except ValueError:
             raise HTTPException(
                 status_code=502,

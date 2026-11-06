@@ -1,6 +1,6 @@
 # Mini Code Agent
 
-一个由学习者逐步实现的真实DeepSeek项目。终端对话和模型模块已接通；当前整理后端目录，准备亲手实现HTTP接口。
+一个由学习者逐步实现的真实 DeepSeek 项目。现已接通命令行、HTTP 多轮会话、受限文件读取工具，以及本地聊天网页。
 
 ## 开发约定
 
@@ -17,19 +17,24 @@ Mini Code Agent/
 ├── main.py                 # 终端入口，仍可点三角运行
 ├── backend/
 │   ├── __init__.py          # Python包标记
-│   ├── llm.py               # 你实现的ask_model，迁移时逻辑不改
-│   └── api.py               # HTTP入口预留，尚未实现
+│   ├── llm.py               # request_model、ask_model、ask_agent
+│   ├── tool.py              # 文件白名单、读取与工具执行
+│   └── api.py               # /chat接口、网页和静态资源入口
+├── frontend/dist/
+│   ├── index.html           # 网页结构
+│   └── assets/
+│       ├── app.css          # 网页样式
+│       └── app.js           # 输入、请求、展示与会话切换
+├── tests/test_web.py        # 网页接线测试，不调用模型
 ├── .env                    # 本地配置，不上传
 ├── .env.example
 ├── requirements.txt
 └── README.md
 ```
 
-main.py从backend.llm导入ask_model。后续HTTP接口也复用它；不要导入带终端输入循环的main.py。
+main.py 和 HTTP 接口均复用 backend.llm.ask_agent，不导入带终端输入循环的 main.py。
 
-已用两次真实DeepSeek请求验证终端历史追问，随后/exit正常退出；这是当前正常链路证据，不代表所有失败路径或独立复现均已验收。
-
-下一步只编写backend/api.py。它要从项目根目录定位.env，而不是查找backend目录里的.env；未来服务启动入口是backend.api:app。目前只有说明文字，还没有app，不要提前执行该启动命令。frontend和docs在实际需要时再创建；当前没有数据库、流式或文件工具。
+Agent 最多执行一轮工具请求（本轮最多3个工具），然后再请求模型生成最终答案；不是无限自主循环。read_file 只允许读取 main.py、backend/api.py、backend/llm.py，并检查实际路径和20000字节大小限制。不支持文件修改、Shell或公开部署。
 
 准备：在本目录新建`.env`，按`.env.example`填写你已有的DeepSeek密钥。不要把真实密钥粘贴给教师。
 
@@ -40,7 +45,32 @@ python -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-Windows把解释器路径换成`.venv/Scripts/python.exe`。写好后运行`.venv/bin/python main.py`；创建.env和导入库不会发送聊天请求，调用生成接口才会。
+Windows把解释器路径换成`.venv/Scripts/python.exe`。终端聊天运行`.venv/bin/python main.py`；创建.env和导入库不会发送聊天请求，调用生成接口才会。
+
+## 打开本地聊天网页
+
+在项目根目录启动（只监听本机）：
+
+```sh
+.venv/bin/python -m uvicorn backend.api:app --host 127.0.0.1 --port 8010 --reload
+```
+
+浏览器打开 <http://127.0.0.1:8010/>，接口文档仍在 <http://127.0.0.1:8010/docs>。终端保持运行，Ctrl+C停止。不需要 Node、前端安装或构建；不要双击 index.html 以 file:// 打开。
+
+- 示例问题只填入输入框；点击发送或按 Enter 才发真实请求，Shift+Enter换行。中文输入法选字的 Enter 不会提交。
+- 等待回答时禁用重复提交和新建对话；不虚构工具进度，不自动重试。断网时后台可能仍在处理原请求，应先检查终端。
+- 新建对话使用新的 conversation_id，不复用旧上下文；刷新网页也开启新会话。消息不写入浏览器持久存储。
+- 后端历史仅保存在单个服务进程的内存中，自动重载或重启会清空。当前不适用于多用户、并发同一会话或生产部署。
+- 网页只接触同源 /chat，密钥留在后端；只公开 frontend/dist/assets，不公开项目根目录。回答以文本及代码块展示，不执行其中的HTML。
+- 页面不显示工具名、耗时或token等后端没有提供的实时事件。需要观察这些信息时继续使用调试方式，而不是把推测当进度。
+
+不产生模型费用的网页接线测试：
+
+```sh
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+真实提问会调用 DeepSeek；通常普通回答一次模型请求，需要读取工具时两次。回答仍需对照代码核实。
 
 ## 后续方向，仅作规划
 
