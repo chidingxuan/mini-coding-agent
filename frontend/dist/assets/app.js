@@ -135,11 +135,35 @@ function errorForStatus(code) {
 
 async function errorForResponse(response) {
   // 只识别约定的错误码，不直接回显未知服务错误或SDK异常全文。
-  if (response.status === 502) {
+  {
     try {
       const body = await response.json();
-      if (body?.detail?.code === "output_truncated") {
-        return "模型回答因长度限制被截断，本轮未保存。请缩小问题范围，或提高后端 max_tokens 后手动发送；不会自动重试。";
+      const messages = {
+        output_truncated: "模型回答因长度限制被截断，本轮未保存。请缩小问题范围，或提高后端 max_tokens 后手动发送；不会自动重试。",
+        model_call_limit: "本次问答已达到模型请求次数上限，任务尚未完成，本轮未保存。请拆分问题后手动发送；不会继续调用工具或自动重试。",
+        tool_rejected: "工具请求被拒绝：工具名称、访问路径或数量不符合规则。本轮未保存；请使用白名单内的文件，不要通过放宽权限来绕过检查。",
+        invalid_tool_arguments: "模型提出的工具参数不合法，本轮未保存。请明确问题后手动发送；程序不会执行这条不合格的工具请求。",
+        tool_failed: "工具读取文件失败，本轮未保存。请检查文件是否存在、读取权限及UTF-8编码，再手动发送。",
+        invalid_tool_call: "模型返回的工具请求缺失必要信息或编号不正确，本轮未保存，不继续执行工具。",
+        invalid_model_response: "模型返回的数据未通过检查，本轮未保存；请检查后端，不会自动重试。",
+        incomplete_model_response: "模型响应未正常完成，本轮未保存；请稍后手动发送。",
+        empty_model_response: "模型没有返回有效正文，本轮未保存；请调整问题后手动发送。",
+        model_refused: "模型未提供可用回答，本轮未保存；请调整问题，不会自动重试。",
+        configuration_error: "后端缺少模型配置。请检查项目.env中的密钥和模型名称，不要把密钥填入网页。",
+        model_timeout: "模型请求超时，本轮未保存。请先检查后端状态，等待后再手动发送；不会自动重试。",
+        model_connection_failed: "后端无法连接模型服务，本轮未保存。请检查后端网络与代理配置，再手动发送。",
+        model_auth_failed: "模型密钥认证失败。请在后端.env中检查密钥，不要把真实密钥贴到网页或聊天里。",
+        model_permission_denied: "当前模型密钥没有访问权限，请检查模型名称和账户权限。",
+        model_rate_limited: "模型服务限流，本轮未保存。请稍等后手动发送；不会自动重试。",
+        model_balance_exhausted: "模型账户余额不足，本轮未保存，请检查DeepSeek账户额度。",
+        model_service_error: "模型服务暂时不可用，本轮未保存，请稍后手动发送。",
+        model_request_rejected: "模型服务拒绝了请求，请检查后端模型名称、请求参数或上下文长度；本轮未保存。",
+        model_request_failed: "模型请求未完成，本轮未保存，请检查后端配置和服务状态。",
+        invalid_input: "问题不能为空，请输入有效问题后发送。",
+      };
+      const code = body?.detail?.code;
+      if (typeof code === "string" && Object.hasOwn(messages, code)) {
+        return messages[code];
       }
     } catch {
       // 兼容旧接口、非JSON错误页和没有错误码的响应。

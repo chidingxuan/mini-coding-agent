@@ -38,6 +38,13 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 def chat(body: ChatRequest):
+    if not body.question.strip():
+        raise HTTPException(422, detail={"code": "invalid_input", "message": "问题不能为空"})
+    if not api_key or not model:
+        raise HTTPException(503, detail={
+            "code": "configuration_error",
+            "message": "缺少模型密钥或模型名称，请检查后端.env配置",
+        })
     history = conversations.get(body.conversation_id, [])
     with OpenAI(
         api_key=api_key,
@@ -55,7 +62,7 @@ def chat(body: ChatRequest):
             
         except AgentError as error:
             raise HTTPException(
-                status_code=502,
+                status_code=error.status_code,
                 detail={
                     "code": error.code,
                     "message": str(error),
@@ -65,7 +72,7 @@ def chat(body: ChatRequest):
         except ValueError:
             raise HTTPException(
                 status_code=502,
-                detail="模型回答未正常完成",
+                detail={"code": "invalid_model_response", "message": "返回数据未通过检查"},
             ) from None
 
     conversations[body.conversation_id]=[

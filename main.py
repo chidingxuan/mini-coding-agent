@@ -4,11 +4,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 from backend.llm import ask_agent
+from backend.errors import AgentError
 # 1. 读取main.py同目录下的.env
 load_dotenv(Path(__file__).with_name(".env"))
 
 api_key = os.getenv("DEEPSEEK_API_KEY")
 model = os.getenv("DEEPSEEK_MODEL")
+
+if not api_key or not model:
+    raise SystemExit("缺少DEEPSEEK_API_KEY或DEEPSEEK_MODEL，请检查项目根目录的.env。")
 
 
 history = []#准备历史会话
@@ -39,8 +43,11 @@ with OpenAI(
                                 model=model, 
                                 messages= message
                         )
-        except ValueError as error:
-            print(error)
+        except AgentError as error:
+            print(f"⚠️ [{error.code}] {error}")
+            continue
+        except ValueError:
+            print("⚠️ 返回数据未通过检查，本轮不计入历史。")
             continue
 
         print("助手：", answer)
