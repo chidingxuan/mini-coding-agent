@@ -1,0 +1,48 @@
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+from openai import OpenAI
+from backend.llm import ask_model
+# 1. 读取main.py同目录下的.env
+load_dotenv(Path(__file__).with_name(".env"))
+
+api_key = os.getenv("DEEPSEEK_API_KEY")
+model = os.getenv("DEEPSEEK_MODEL")
+
+
+history = []#准备历史会话
+# 2. 准备客户端，用完自动关闭/exit
+
+
+with OpenAI(
+    api_key=api_key,
+    base_url="https://api.deepseek.com",
+    timeout=30,
+    max_retries=0,
+) as client:
+    while True:
+        question = input("你：").strip()
+
+        if question == "/exit":
+            break
+
+        if not question:
+            continue
+        message = [
+                {"role": "system", "content": "你是编程助手，使用中文简洁回答。"},
+                *history,
+                {"role": "user", "content": question},
+        ]
+        try:
+            answer = ask_model(client= client, model=model, messages= message)
+        except ValueError as error:
+            print(error)
+            continue
+
+        print("助手：", answer)
+
+        history.extend([
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer},
+        ])
