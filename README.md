@@ -18,7 +18,8 @@ Mini Code Agent/
 ├── backend/
 │   ├── __init__.py          # Python包标记
 │   ├── llm.py               # request_model、ask_model、ask_agent
-│   ├── tool.py              # 文件白名单、读取与工具执行
+│   ├── tool.py              # 文件白名单、列文件、读取与工具执行
+│   ├── errors.py            # 带错误码的AgentError
 │   └── api.py               # /chat接口、网页和静态资源入口
 ├── frontend/dist/
 │   ├── index.html           # 网页结构
@@ -34,7 +35,11 @@ Mini Code Agent/
 
 main.py 和 HTTP 接口均复用 backend.llm.ask_agent，不导入带终端输入循环的 main.py。
 
-Agent 最多执行一轮工具请求（本轮最多3个工具），然后再请求模型生成最终答案；不是无限自主循环。read_file 只允许读取 main.py、backend/api.py、backend/llm.py，并检查实际路径和20000字节大小限制。不支持文件修改、Shell或公开部署。
+Agent 支持有限多轮工具调用：一次用户提问最多请求模型4次，每次响应最多接受3个工具请求。第4次若仍要求工具，则停止而不执行新的工具；若返回完整文字答案则成功。请求异常不自动重试，不是无限自主循环。
+
+list_files 只列出白名单中实际存在的文件名；read_file 只允许读取 main.py、backend/api.py、backend/llm.py，并检查实际路径和20000字节大小限制。.env和个人研究文件backend/ceshi.ipynb不在工具白名单内，也不上传GitHub。不支持文件修改、Shell或公开部署。
+
+每次模型请求的 max_tokens 当前为1000。finish_reason 为 length 时抛出 AgentError("output_truncated", ...)，/chat 返回 HTTP 502 和 detail.code；网页明确提示输出被截断、保留问题、不自动重发。其他 ValueError 暂时仍显示通用错误，工具拒绝和次数耗尽尚未独立分类。失败不追加到成功对话历史。
 
 准备：在本目录新建`.env`，按`.env.example`填写你已有的DeepSeek密钥。不要把真实密钥粘贴给教师。
 
@@ -70,7 +75,7 @@ Windows把解释器路径换成`.venv/Scripts/python.exe`。终端聊天运行`.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-真实提问会调用 DeepSeek；通常普通回答一次模型请求，需要读取工具时两次。回答仍需对照代码核实。
+真实提问会调用 DeepSeek；普通回答可能一次模型请求，多轮工具任务可能需要多次（当前最多4次）。提高 max_tokens 是提高每次输出上限，不代表每次固定消耗该数量。回答仍需对照代码核实。
 
 ## 后续方向，仅作规划
 

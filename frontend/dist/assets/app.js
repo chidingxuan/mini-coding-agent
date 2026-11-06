@@ -133,6 +133,21 @@ function errorForStatus(code) {
   return `请求失败（HTTP ${code}）。请检查后端终端、网络与模型配置；不会自动重试。`;
 }
 
+async function errorForResponse(response) {
+  // 只识别约定的错误码，不直接回显未知服务错误或SDK异常全文。
+  if (response.status === 502) {
+    try {
+      const body = await response.json();
+      if (body?.detail?.code === "output_truncated") {
+        return "模型回答因长度限制被截断，本轮未保存。请缩小问题范围，或提高后端 max_tokens 后手动发送；不会自动重试。";
+      }
+    } catch {
+      // 兼容旧接口、非JSON错误页和没有错误码的响应。
+    }
+  }
+  return errorForStatus(response.status);
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (busy) return;
@@ -173,7 +188,7 @@ form.addEventListener("submit", async (event) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ conversation_id: conversationId, question: text }),
     });
-    if (!response.ok) throw new Error(errorForStatus(response.status));
+    if (!response.ok) throw new Error(await errorForResponse(response));
     let data;
     try {
       data = await response.json();

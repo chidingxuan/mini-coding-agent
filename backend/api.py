@@ -9,6 +9,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from backend.llm import ask_agent
+from backend.errors import AgentError
 
 # api.py在backend中，因此向上两级找到项目根目录
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -51,6 +52,16 @@ def chat(body: ChatRequest):
         ]
         try:
             answer = ask_agent(client= client, model=model, messages= message)
+            
+        except AgentError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": error.code,
+                    "message": str(error),
+                },
+            ) from None
+
         except ValueError:
             raise HTTPException(
                 status_code=502,

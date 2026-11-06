@@ -55,23 +55,55 @@ TOOLS = [
                 "additionalProperties": False,
             },
         },
-    }
+    },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "列出当前项目白名单中实际存在的文件路径，不返回文件正文。",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
     
 def execute_tool(name: str, arguments: str) -> str:
-    # 1. 检查工具名称
-    if name != "read_file":
+    if name not in {"read_file", "list_files"}:
         raise ValueError("不支持这个工具")
-    
-    # 2. 解析参数JSON
+
     args = json.loads(arguments)
 
-    # 3. 检查参数结构
-    if not isinstance(args, dict) or set(args) != {"path"}:
-        raise ValueError("模型参数不对")
+    if not isinstance(args, dict):
+        raise ValueError("工具参数必须是字典")
+
+    # 列文件：不接受任何参数
+    if name == "list_files":
+        if args:
+            raise ValueError("list_files不接受参数")
+
+        return json.dumps(list_files(), ensure_ascii=False)
+
+    # 读文件：必须只有一个字符串参数path
+    if set(args) != {"path"}:
+        raise ValueError("read_file必须且只能提供path")
 
     if not isinstance(args["path"], str):
         raise ValueError("path必须是字符串")
-    
-    # 4. 调用read_file，返回文件正文
+
     return read_file(args["path"])
+    
+
+
+def list_files() -> list[str]:
+    files = []
+
+    for path in sorted(READABLE_FILES):
+        if (PROJECT_DIR / path).is_file():
+            files.append(path)
+
+    return files
