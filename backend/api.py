@@ -52,6 +52,8 @@ def chat(body: ChatRequest):
         })
     history = load_history(body.conversation_id)
     model_history = history[-2 * MAX_HISTORY_TURNS:]
+    proposals = []
+
     with OpenAI(
         api_key=api_key,
         base_url="https://api.deepseek.com",
@@ -64,7 +66,11 @@ def chat(body: ChatRequest):
                 {"role": "user", "content": body.question},
         ]
         try:
-            answer = ask_agent(client= client, model=model, messages= message)
+            answer = ask_agent(client= client,
+                               model=model,
+                               messages= message,
+                               edit_proposals= proposals
+                               )
             
         except AgentError as error:
             raise HTTPException(

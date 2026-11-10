@@ -52,10 +52,20 @@ def ask_agent(
     client: OpenAI,
     model: str,
     messages: list[dict],
+    edit_proposals: list[dict] | None = None,
 ) -> str:
     # 在这里串起模型请求、工具执行和最终回答
     work_messages = [message.copy() for message in messages]
     max_model_calls = 4
+
+    available_tools = TOOLS
+
+    if edit_proposals is None:
+        available_tools = [
+            entry
+            for entry in TOOLS
+            if entry["function"]["name"] != "create_proposal"
+        ]
 
     for step in range(max_model_calls):
         # 每次请求模型、判断返回、必要时执行工具
@@ -64,7 +74,7 @@ def ask_agent(
             client= client,
             model= model,
             messages= work_messages,
-            tools=TOOLS
+            tools=available_tools
         )
         if not response.choices:
             raise AgentError("invalid_model_response", "模型没有返回候选结果")
@@ -117,6 +127,7 @@ def ask_agent(
             result = execute_tool(
                 name=call.function.name,
                 arguments=call.function.arguments,
+                edit_proposals=edit_proposals,
             )
 
             work_messages.append({
