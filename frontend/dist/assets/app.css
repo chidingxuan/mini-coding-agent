@@ -585,6 +585,42 @@ h1 span {
   white-space: pre;
   margin: 14px 0;
 }
+.proposal-card {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #dce3d3;
+  border-radius: 8px;
+  min-width: 0;
+}
+.proposal-card h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.proposal-path {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.message-content .proposal-notice {
+  margin: 9px 0 0;
+  color: #65715e;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.proposal-card pre {
+  max-height: 360px;
+  margin-bottom: 0;
+}
+.proposal-card pre:focus-visible {
+  outline: 2px solid #52745a;
+  outline-offset: 2px;
+}
+.proposal-apply {
+  margin-top: 12px;
+}
+.proposal-apply:disabled {
+  opacity: 0.65;
+}
 .message-actions {
   margin-top: 10px;
   display: flex;

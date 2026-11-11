@@ -2,4 +2,4 @@
 
 
 def greeting(name: str) -> str:
-    return f"欢迎，{name}！"
+    return f"欢迎，{name}！祝你学习愉快！"

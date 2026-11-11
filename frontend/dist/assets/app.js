@@ -13,6 +13,8 @@ const newChat = document.querySelector("#new-chat");
 const dialog = document.querySelector("#new-chat-dialog");
 const historyDialog = document.querySelector("#history-dialog");
 const switchHistoryDialog = document.querySelector("#switch-history-dialog");
+const applyDialog = document.querySelector("#apply-proposal-dialog");
+let pendingApplication = null;
 const openHistory = document.querySelector("#open-history");
 const refreshHistory = document.querySelector("#refresh-history");
 const historyLists = [document.querySelector("#history-list"), document.querySelector("#history-dialog-list")];
@@ -54,6 +56,9 @@ function setBusy(value) {
   });
   suggestions.forEach((button) => {
     button.disabled = value;
+  });
+  document.querySelectorAll("[data-apply-proposal]").forEach((button) => {
+    button.disabled = value || button.dataset.finished === "true";
   });
   sendLabel.textContent = value ? "等待中" : "发送";
   updateComposer();
@@ -148,8 +153,16 @@ async function switchConversation(id, initial = false, discardDraft = false) {
     if (!response.ok) throw new Error("history_failed");
     const data = await response.json();
     if (data?.conversation_id !== id || !Array.isArray(data.messages) || !data.messages.length ||
-        !data.messages.every((row) => row && ["user", "assistant"].includes(row.role) && typeof row.content === "string")) {
+        !data.messages.every((row) => row && Number.isSafeInteger(row.id) && row.id > 0 &&
+          ["user", "assistant"].includes(row.role) && typeof row.content === "string")) {
       throw new Error("invalid_history");
+    }
+    const proposals = data.proposals ?? [];
+    const assistantIds = new Set(data.messages.filter((row) => row.role === "assistant").map((row) => row.id));
+    if (!Array.isArray(proposals) || !proposals.every((proposal) => proposal &&
+      assistantIds.has(proposal.assistant_message_id) &&
+      typeof proposal.path === "string" && typeof proposal.diff === "string")) {
+      throw new Error("invalid_history_proposals");
     }
     // 验证读取结果成功后才切换，失败时保留原会话和草稿。
     conversationId = id;
@@ -160,7 +173,10 @@ async function switchConversation(id, initial = false, discardDraft = false) {
     messages.replaceChildren();
     for (const row of data.messages) {
       const message = addMessage(row.role, row.content);
-      if (row.role === "assistant") addCopyAction(message.article, row.content);
+      if (row.role === "assistant") {
+        renderProposals(message.content, proposals.filter((proposal) => proposal.assistant_message_id === row.id));
+        addCopyAction(message.article, row.content);
+      }
     }
     question.value = "";
     updateSessionLabel();
@@ -241,6 +257,123 @@ function addCopyAction(article, text) {
   });
   actions.append(button);
   article.append(actions);
+}
+
+function renderProposals(container, proposals) {
+  // 卡片取自后端结构化提案；确认时只提交编号，不提交替换正文或指纹。
+  if (proposals === undefined || (Array.isArray(proposals) && proposals.length === 0)) return;
+  if (!Array.isArray(proposals) || !proposals.every((proposal) =>
+    proposal && typeof proposal.path === "string" && typeof proposal.diff === "string",
+  )) {
+    const notice = document.createElement("p");
+    notice.className = "proposal-notice";
+    notice.textContent = "提案数据格式不正确，未展示预览；文字回答仍可查看。";
+    container.append(notice);
+    return;
+  }
+  for (const proposal of proposals) {
+    const card = document.createElement("section");
+    card.className = "proposal-card";
+    card.setAttribute("aria-label", "修改提案");
+    const title = document.createElement("h3");
+    title.textContent = "修改提案 · 只读预览";
+    const path = document.createElement("code");
+    path.className = "proposal-path";
+    path.textContent = proposal.path;
+    const notice = document.createElement("p");
+    notice.className = "proposal-notice";
+    const applied = proposal.status === "applied";
+    const eligible = proposal.path === "workspace/demo.py" &&
+      /^[a-f0-9]{32}$/.test(proposal.id) &&
+      typeof proposal.before_sha256 === "string" && /^[a-f0-9]{64}$/.test(proposal.before_sha256) &&
+      (proposal.status === undefined || proposal.status === "pending");
+    if (applied) {
+      title.textContent = "修改提案 · 已应用";
+      notice.textContent = "后端记录该提案已应用，原内容已备份，不可重复应用。以下差异是历史记录，不代表当前文件内容。";
+    } else {
+      notice.textContent = eligible
+        ? "提案已保存，尚未应用。核对差异后可确认修改演练文件；后端仍会检查状态、权限和文件版本。"
+        : "提案已保存，仅供预览。非演练文件或缺少原文件指纹的旧提案不可在此应用；需要时重新生成演练提案。";
+    }
+    const pre = document.createElement("pre");
+    pre.tabIndex = 0;
+    pre.setAttribute("aria-label", "修改差异，可横向滚动查看");
+    const code = document.createElement("code");
+    code.textContent = proposal.diff;
+    pre.append(code);
+    card.append(title, path, notice, pre);
+    if (eligible) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "primary-button proposal-apply";
+      button.dataset.applyProposal = proposal.id;
+      button.textContent = "确认应用…";
+      button.disabled = busy;
+      button.addEventListener("click", () => {
+        if (busy || button.disabled || pendingApplication) return;
+        pendingApplication = { proposal, button, notice, title, session: conversationId };
+        document.querySelector("#apply-proposal-path").textContent = proposal.path;
+        applyDialog.returnValue = "cancel";
+        applyDialog.showModal();
+      });
+      card.append(button);
+    }
+    container.append(card);
+  }
+}
+
+applyDialog.addEventListener("close", () => {
+  const application = pendingApplication;
+  pendingApplication = null;
+  if (application && applyDialog.returnValue === "apply") void applyProposal(application);
+});
+
+async function applyProposal({ proposal, button, notice, title, session }) {
+  if (busy || session !== conversationId || button.dataset.finished === "true") return;
+  setBusy(true);
+  button.textContent = "正在应用…";
+  status.textContent = "正在应用演练提案；不调用模型，不自动重试。";
+  try {
+    const response = await fetch(`/proposals/${encodeURIComponent(proposal.id)}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: session, confirmed: true }),
+    });
+    if (!response.ok) {
+      let code;
+      try { code = (await response.json())?.detail?.code; } catch { /* 不回显未知异常正文。 */ }
+      const errors = {
+        untrusted_origin: "请求来源被拒绝，请从本项目的本地网页操作。",
+        proposal_not_found: "没有找到属于当前会话的提案，请核对历史记录。",
+        tool_rejected: "提案被拒绝：可能已应用、文件版本已变化，或不符合允许范围。请核对文件与历史记录，必要时重新生成提案。",
+        proposal_write_uncertain: "文件操作未正常完成，不能确认目标是否已修改。请检查文件和 runtime/edit_backups 中的备份，不要直接重试。",
+        proposal_record_failed: "文件已修改，但数据库状态未能确认保存。请检查文件、数据库和 runtime/edit_backups 中的备份，不要直接重试。",
+      };
+      throw new Error(Object.hasOwn(errors, code) ? errors[code] :
+        `应用请求未取得可靠成功结果（HTTP ${response.status}）。请先核对文件、备份与数据库，不要直接重试。`);
+    }
+    let result;
+    try { result = await response.json(); } catch { /* 下方统一处理不确定结果。 */ }
+    if (result?.proposal_id !== proposal.id || result.status !== "applied") {
+      throw new Error("返回结果不完整，文件可能已修改。请先核对文件、备份与数据库，不要直接重试。");
+    }
+    title.textContent = "修改提案 · 已应用";
+    notice.textContent = "修改已应用，原内容已备份。以下差异是历史记录，不代表当前文件内容；不会执行代码。";
+    button.textContent = "已应用";
+    status.textContent = "演练文件已修改 · 提案状态已保存";
+  } catch (error) {
+    notice.textContent = error instanceof TypeError
+      ? "连接中断，不能确认文件是否已修改。请检查文件、备份和数据库，不要直接重试。"
+      : error.message;
+    notice.setAttribute("role", "alert");
+    button.textContent = "请先核查结果";
+    status.textContent = "未取得可靠成功结果 · 不自动重试，请先核查";
+  } finally {
+    // 成功或失败都不允许在本卡片上直接重复提交。
+    button.dataset.finished = "true";
+    setBusy(false);
+    scrollToLatest();
+  }
 }
 
 function errorForStatus(code) {
@@ -349,6 +482,7 @@ form.addEventListener("submit", async (event) => {
     pending.content.replaceChildren();
     pending.content.classList.remove("pending-content");
     renderText(pending.content, data.answer);
+    renderProposals(pending.content, data.proposals);
     addCopyAction(pending.article, data.answer);
     turnCount += 1;
     conversationTitles.set(conversationId, document.querySelector("#session-title").textContent);

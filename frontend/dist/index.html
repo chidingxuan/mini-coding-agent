@@ -42,7 +42,7 @@
         </section>
         <div class="scope-section">
           <div class="sidebar-section-label">
-            可读取的项目文件 <span>03</span>
+            可读取的项目文件 <span>04</span>
           </div>
           <p class="scope-note">明确范围，按需读取。</p>
           <ul class="file-list">
@@ -58,9 +58,13 @@
               <span class="file-type">PY</span
               ><span>backend/api.py<small>HTTP 接口</small></span>
             </li>
+            <li>
+              <span class="file-type">PY</span>
+              <span>workspace/demo.py<small>仅此文件可手动确认修改</small></span>
+            </li>
           </ul>
           <div class="read-only">
-            <span aria-hidden="true">⌑</span> 仅提供读取工具，不修改文件
+            <span aria-hidden="true">⌑</span> 模型只读取和提出修改；演练文件须由你确认后应用
           </div>
         </div>
         <div class="sidebar-bottom">
@@ -236,6 +240,17 @@
         <div class="dialog-actions">
           <button value="cancel" class="secondary-button">保留草稿</button>
           <button value="switch" class="primary-button">放弃草稿并切换</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="apply-proposal-dialog" aria-labelledby="apply-proposal-title">
+      <form method="dialog">
+        <h2 id="apply-proposal-title">确认修改演练文件？</h2>
+        <p>将实际修改 <code id="apply-proposal-path"></code>。请先核对卡片中的差异；后端会检查文件版本并保存原内容备份，不会执行代码。</p>
+        <p>仅支持本机单进程演练。取消不会发送应用请求。</p>
+        <div class="dialog-actions">
+          <button value="cancel" class="secondary-button" autofocus>取消</button>
+          <button value="apply" class="primary-button">确认修改文件</button>
         </div>
       </form>
     </dialog>

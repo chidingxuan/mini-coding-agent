@@ -19,7 +19,11 @@ Mini Code Agent/
 ├── backend/
 │   ├── __init__.py          # Python包标记
 │   ├── llm.py               # request_model、ask_model、ask_agent
-│   ├── tool.py              # 白名单、搜索、按行读取、只读修改预览
+│   ├── tool.py              # 模型工具参数检查与分发
+│   ├── tool_schemas.py      # 给模型看的工具说明
+│   ├── file_access.py       # 访问范围、路径检查、读取与搜索
+│   ├── proposal_files.py    # 差异、提案、版本检查、备份与文件替换
+│   ├── edits.py             # 应用提案的协调流程和单进程锁
 │   ├── errors.py            # 带错误码的AgentError
 │   ├── storage.py           # SQLite建表、保存、读取和列出会话
 │   └── api.py               # 聊天、会话查询、网页和静态资源入口
@@ -32,7 +36,7 @@ Mini Code Agent/
 │   ├── test_web.py          # 网页接线测试，不调用模型
 │   ├── test_errors.py       # SDK错误映射与真实本地工具测试
 │   └── test_preview_edit.py # 临时真实文件的预览与只读权限测试
-├── workspace/demo.py        # 留存的旧演练文件，当前未接入工具
+├── workspace/demo.py        # 唯一允许手动确认修改的演练文件
 ├── runtime/agent.sqlite3    # 本机聊天数据库，不上传
 ├── .env                    # 本地配置，不上传
 ├── .env.example
@@ -44,13 +48,17 @@ main.py 和 HTTP 接口均复用 backend.llm.ask_agent，不导入带终端输�
 
 Agent 支持有限多轮工具调用：一次用户提问最多请求模型4次，每次响应最多接受3个工具请求。第4次若仍要求工具，则停止而不执行新的工具；若返回完整文字答案则成功。请求异常不自动重试，不是无限自主循环。
 
-list_files 只列出白名单中实际存在的文件名；read_file 只允许读取 main.py、backend/api.py、backend/llm.py，并检查实际路径和20000字节大小限制。search_code 复用同一白名单，进行区分大小写的字面关键词匹配，返回路径、行号及最多300字符的命中行，最多20条；不是向量检索，不执行代码。read_lines 复用读取权限，返回指定行区间及原始行号，包含结束行，一次最多80行；内部仍先读文件再截取，减少的是发给模型的内容。.env和个人研究文件backend/ceshi.ipynb不在工具白名单内，也不上传GitHub。当前工具只读，不支持实际文件写入、Shell或公开部署。
+list_files 只列出白名单中实际存在的文件名；read_file 只允许读取 main.py、backend/api.py、backend/llm.py、workspace/demo.py，并检查实际路径和20000字节大小限制。search_code 复用同一白名单，进行区分大小写的字面关键词匹配，返回路径、行号及最多300字符的命中行，最多20条；不是向量检索，不执行代码。read_lines 返回指定行区间及原始行号，包含结束行，一次最多80行；内部仍先读文件再截取，减少的是发给模型的内容。.env和个人研究文件backend/ceshi.ipynb不在工具白名单内，也不上传GitHub。模型只能读取、搜索和提出修改，不提供应用提案、Shell或执行代码的模型工具。
 
 preview_edit(path, old_text, new_text) 生成单处精确替换的 unified diff 预览。old_text 必须非空、在当前文件中唯一出现，且不带read_lines添加的行号；缩进和换行不会被strip。原文找不到、重复（含重叠匹配）、没有实际变化、类型错误时拒绝。new_text 可为空来预览删除；单个替换文本不能超过20000字符，拟修改后的UTF-8文件不能超过20000字节。工具说明要求模型先读取原文，在最终回答中用diff代码块完整展示工具返回的差异，并说明仅预览。现有网页支持代码块，无需专门的前端改动。
 
-preview_edit只在内存中计算字符串，不写文件、不运行代码、不验证修改后的Python语法或业务正确性，也不保存可应用提案。当前未开放提案保存、确认按钮或应用接口。2026-11-10按用户要求撤回确认写入阶段，旧演练文件、数据库历史数据和备份只作留存，不接入当前工具。
+preview_edit只在内存中计算字符串，不写文件、不运行代码、不验证修改后的Python语法或业务正确性，也不保存可应用提案。2026-11-10曾按用户要求撤回整段确认实现；随后按单步教学重新接入下述功能，旧恢复存档不参与当前执行。
 
-随后按单步教学接入create_proposal：返回id、path、old_text、new_text、diff五个字段，编号不代表写入批准。/chat创建空列表，经ask_agent传给execute_tool，工具成功后append提案，并返回JSON供模型继续回答。提供收集列表（含空列表）时才向模型提供此工具；默认None的旧命令行调用不提供它。当前提案仅存在本次请求内存中，未保存数据库，/chat仍只返回answer，没有提案卡片或应用功能。真实DeepSeek已完成read_lines→create_proposal→回答，共3次请求，核对列表从0变为1、引用相同、五字段正确，三个目标文件与正式数据库未变。
+create_proposal返回id、path、old_text、new_text、diff；演练文件额外保存与差异来自同一次快照的before_sha256。编号和提案不代表写入批准。/chat收集实际工具生成的提案，与问答在同一SQLite事务中保存，并返回answer和proposals。历史接口返回消息编号及提案，用assistant_message_id恢复对应卡片。默认None的旧命令行调用不提供create_proposal工具。旧提案没有指纹时不能补算成当前版本，也不能应用。
+
+网页仅为workspace/demo.py且带有效指纹的待应用提案提供按钮；二次确认后调用POST /proposals/{proposal_id}/apply，只提交conversation_id和严格布尔值confirmed=true。后端检查固定本地Origin、会话范围、pending状态、路径及符号链接、文件指纹和差异；保存原内容备份，使用同目录临时文件替换目标，再记录applied状态及备份路径。其他源码继续只读，修改后的代码不自动执行。取消不发送应用请求，已应用提案不再提供按钮；失败或断连不自动重试，特别是“文件已改但状态记录失败”必须先人工核查。备份位于runtime/edit_backups，不上传Git。
+
+安全边界：仅限127.0.0.1上的本机单进程开发演练；Origin和会话编号不是用户鉴权，进程锁不是跨进程锁，文件与SQLite不具备联合事务，也未实现中断后的自动恢复或恶意文件系统并发防护。应用时不要同时手动编辑演练文件，不要公开部署或放宽写入范围。
 
 每次模型请求的 max_tokens 当前为1000。AgentError 为输出截断、模型请求次数耗尽、工具拒绝、参数错误、文件读取失败，以及常见模型服务异常提供稳定错误码；/chat 用 detail.code 和固定安全说明返回给网页。网页按错误码显示提示，不回显SDK异常全文、不自动重发。模型失败时不会保存本轮成功问答。
 

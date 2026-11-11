@@ -62,7 +62,7 @@ class ErrorTests(unittest.TestCase):
 
     def test_real_tools_still_work(self):
         files = json.loads(execute_tool("list_files", "{}"))
-        self.assertEqual(files, ["backend/api.py", "backend/llm.py", "main.py"])
+        self.assertEqual(files, ["backend/api.py", "backend/llm.py", "main.py", "workspace/demo.py"])
         self.assertIn("ask_agent", execute_tool("read_file", '{"path":"main.py"}'))
 
 

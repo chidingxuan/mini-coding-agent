@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from backend import tool
+from backend import file_access, proposal_files, tool
 from backend.errors import AgentError
 
 
@@ -14,15 +14,15 @@ class PreviewEditTests(unittest.TestCase):
         directory = TemporaryDirectory(prefix="mini-agent-preview-test-")
         self.addCleanup(directory.cleanup)
         self.project_dir = Path(directory.name).resolve()
-        previous_dir = tool.PROJECT_DIR
-        tool.PROJECT_DIR = self.project_dir
-        self.addCleanup(setattr, tool, "PROJECT_DIR", previous_dir)
+        previous_dir = file_access.PROJECT_DIR
+        file_access.PROJECT_DIR = self.project_dir
+        self.addCleanup(setattr, file_access, "PROJECT_DIR", previous_dir)
         self.target = self.project_dir / "main.py"
         self.target.write_text('title = "海边"\nvalue = 1\n', encoding="utf-8")
 
     def test_diff_and_original_bytes(self):
         before = self.target.read_bytes()
-        diff = tool.preview_edit("main.py", "value = 1", "value = 2")
+        diff = proposal_files.preview_edit("main.py", "value = 1", "value = 2")
         self.assertTrue(diff.startswith("--- a/main.py\n+++ b/main.py\n@@"))
         self.assertIn("-value = 1\n+value = 2\n", diff)
         self.assertIn('title = "海边"', diff)
@@ -33,7 +33,7 @@ class PreviewEditTests(unittest.TestCase):
         before = self.target.read_bytes()
         diff = tool.execute_tool("preview_edit", json.dumps(arguments))
         self.assertIsInstance(diff, str)
-        self.assertEqual(diff, tool.preview_edit(**arguments))
+        self.assertEqual(diff, proposal_files.preview_edit(**arguments))
         self.assertEqual(self.target.read_bytes(), before)
 
     def test_tool_schema(self):
@@ -43,7 +43,7 @@ class PreviewEditTests(unittest.TestCase):
         schema = next(entry["function"]["parameters"] for entry in tool.TOOLS
                       if entry["function"]["name"] == "preview_edit")
         self.assertEqual(set(schema["required"]), {"path", "old_text", "new_text"})
-        self.assertEqual(schema["properties"]["path"]["enum"], sorted(tool.READABLE_FILES))
+        self.assertEqual(schema["properties"]["path"]["enum"], sorted(file_access.READABLE_FILES))
         self.assertFalse(schema["additionalProperties"])
 
     def test_missing_extra_or_wrong_type_arguments(self):
@@ -72,29 +72,29 @@ class PreviewEditTests(unittest.TestCase):
                 self.target.write_text(source, encoding="utf-8")
                 before = self.target.read_bytes()
                 with self.assertRaises(AgentError) as caught:
-                    tool.preview_edit("main.py", old_text, "replacement")
+                    proposal_files.preview_edit("main.py", old_text, "replacement")
                 self.assertEqual(caught.exception.code, "invalid_tool_arguments")
                 self.assertEqual(self.target.read_bytes(), before)
 
     def test_no_change_is_rejected(self):
         with self.assertRaises(AgentError) as caught:
-            tool.preview_edit("main.py", "value = 1", "value = 1")
+            proposal_files.preview_edit("main.py", "value = 1", "value = 1")
         self.assertEqual(caught.exception.code, "invalid_tool_arguments")
 
     def test_empty_replacement_previews_deletion(self):
         before = self.target.read_bytes()
-        diff = tool.preview_edit("main.py", "value = 1\n", "")
+        diff = proposal_files.preview_edit("main.py", "value = 1\n", "")
         self.assertIn("-value = 1\n", diff)
         self.assertEqual(self.target.read_bytes(), before)
 
     def test_indentation_is_not_stripped(self):
         self.target.write_text("def example():\n    return 1\n", encoding="utf-8")
-        diff = tool.preview_edit("main.py", "    return 1", "    return 2")
+        diff = proposal_files.preview_edit("main.py", "    return 1", "    return 2")
         self.assertIn("-    return 1\n+    return 2\n", diff)
 
     def test_missing_final_newline_is_marked_without_joining_lines(self):
         self.target.write_bytes(b"value = 1")
-        diff = tool.preview_edit("main.py", "value = 1", "value = 2")
+        diff = proposal_files.preview_edit("main.py", "value = 1", "value = 2")
         self.assertIn("-value = 1\n\\ No newline at end of file\n+value = 2\n", diff)
         self.assertEqual(diff.count("\\ No newline at end of file"), 2)
         self.assertEqual(self.target.read_bytes(), b"value = 1")
@@ -103,7 +103,7 @@ class PreviewEditTests(unittest.TestCase):
         for before, after in (("value = 1", "value = 1\n"), ("value = 1\n", "value = 1")):
             with self.subTest(before=repr(before)):
                 self.target.write_text(before, encoding="utf-8")
-                diff = tool.preview_edit("main.py", before, after)
+                diff = proposal_files.preview_edit("main.py", before, after)
                 self.assertIn("-value = 1", diff)
                 self.assertIn("+value = 1", diff)
                 self.assertEqual(diff.count("\\ No newline at end of file"), 1)
@@ -116,7 +116,7 @@ class PreviewEditTests(unittest.TestCase):
         for path in (".env", "../main.py", "/etc/passwd", "backend/storage.py"):
             with self.subTest(path=path):
                 with self.assertRaises(AgentError) as caught:
-                    tool.preview_edit(path, "value = 1", "value = 2")
+                    proposal_files.preview_edit(path, "value = 1", "value = 2")
                 self.assertEqual(caught.exception.code, "tool_rejected")
                 self.assertEqual(self.target.read_bytes(), before)
         self.assertEqual(private.read_text(encoding="utf-8"), "PRIVATE_TEST_MARKER")
@@ -127,7 +127,7 @@ class PreviewEditTests(unittest.TestCase):
                                    ("value = 1", "界" * 7000)):
             with self.subTest(old_length=len(old_text), new_length=len(new_text)):
                 with self.assertRaises(AgentError) as caught:
-                    tool.preview_edit("main.py", old_text, new_text)
+                    proposal_files.preview_edit("main.py", old_text, new_text)
                 self.assertEqual(caught.exception.code, "tool_rejected")
                 self.assertEqual(self.target.read_bytes(), before)
 
@@ -138,20 +138,20 @@ class PreviewEditTests(unittest.TestCase):
         directory.mkdir()
         (directory / "api.py").symlink_to(private)
         with self.assertRaises(AgentError) as caught:
-            tool.preview_edit("backend/api.py", "value = 1", "value = 2")
+            proposal_files.preview_edit("backend/api.py", "value = 1", "value = 2")
         self.assertEqual(caught.exception.code, "tool_rejected")
         self.assertEqual(private.read_text(encoding="utf-8"), "value = 1\n")
 
     def test_unencodable_replacement_is_rejected(self):
         with self.assertRaises(AgentError) as caught:
-            tool.preview_edit("main.py", "value = 1", "\ud800")
+            proposal_files.preview_edit("main.py", "value = 1", "\ud800")
         self.assertEqual(caught.exception.code, "invalid_tool_arguments")
 
     def test_replacement_code_is_never_executed(self):
         marker = self.project_dir / "must-not-be-created.txt"
         replacement = f"__import__('pathlib').Path({str(marker)!r}).write_text('executed')"
         before = self.target.read_bytes()
-        diff = tool.preview_edit("main.py", "value = 1", replacement)
+        diff = proposal_files.preview_edit("main.py", "value = 1", replacement)
         self.assertIn("+" + replacement, diff)
         self.assertFalse(marker.exists())
         self.assertEqual(self.target.read_bytes(), before)

@@ -2,17 +2,18 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI,HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool, field_validator
 
 from backend.llm import ask_agent
 from backend.errors import AgentError
-
+from backend.edits import apply_proposal
 from backend.storage import (
     init_db, load_history, save_turn, list_conversations,
+    load_messages, load_proposals,
 )
 # api.py在backend中，因此向上两级找到项目根目录
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -87,9 +88,12 @@ def chat(body: ChatRequest):
                 detail={"code": "invalid_model_response", "message": "返回数据未通过检查"},
             ) from None
 
-    save_turn(body.conversation_id, body.question, answer)
+    save_turn(body.conversation_id, body.question, answer, proposals=proposals)
 
-    return {"answer": answer}
+    return {
+        "answer": answer,
+        "proposals": proposals,
+    }
         
 @app.get("/conversations")
 def get_conversations():
@@ -99,5 +103,56 @@ def get_conversations():
 def get_messages(conversation_id: str):
     return {
         "conversation_id": conversation_id,
-        "messages": load_history(conversation_id),
+        "messages": load_messages(conversation_id),
+        "proposals": load_proposals(conversation_id),
     }
+
+class ApplyProposalRequest(BaseModel):
+    conversation_id: str = Field(min_length=1, max_length=100)
+    confirmed: StrictBool
+
+    @field_validator("confirmed")
+    @classmethod
+    def require_confirmation(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("必须明确确认应用提案")
+        return value
+
+def require_local_origin(request: Request) -> None:
+    allowed_origins = {
+        "http://127.0.0.1:8010",
+        "http://localhost:8010",
+    }
+
+    origin = request.headers.get("origin")
+
+    if origin not in allowed_origins:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "untrusted_origin",
+                "message": "只允许从本项目的本地网页确认修改",
+            },
+        )
+
+@app.post("/proposals/{proposal_id}/apply")
+def confirm_proposal(
+    proposal_id: str,
+    body: ApplyProposalRequest,
+    request: Request,
+):
+    require_local_origin(request)
+
+    try:
+        return apply_proposal(
+            conversation_id=body.conversation_id,
+            proposal_id=proposal_id,
+        )
+    except AgentError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail={
+                "code": error.code,
+                "message": str(error),
+            },
+        ) from None

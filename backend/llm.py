@@ -1,5 +1,6 @@
 from openai import OpenAI, OpenAIError
-from backend.tool import TOOLS, execute_tool
+from backend.tool import execute_tool
+from backend.tool_schemas import TOOLS
 from backend.errors import AgentError, model_request_error
 
 def request_model(
@@ -88,7 +89,7 @@ def ask_agent(
 
         if choice.finish_reason == "content_filter" or choice.message.refusal:
             raise AgentError("model_refused", "模型未提供可用回答，请调整问题")
-        
+
         # 情况一：模型直接给出了文字答案，不需要工具
         if choice.finish_reason == "stop":
             answer = choice.message.content
@@ -103,7 +104,7 @@ def ask_agent(
         tool_calls = choice.message.tool_calls
         if not tool_calls:
             raise AgentError("invalid_tool_call", "模型未提供有效的工具请求")
-        
+
         # 第一版限制一次响应最多执行3个工具请求
         if len(tool_calls) > 3:
             raise AgentError("tool_rejected", "单次模型响应的工具请求超过3个")
@@ -114,7 +115,7 @@ def ask_agent(
         call_ids = [call.id for call in tool_calls]
         if any(not call_id for call_id in call_ids) or len(set(call_ids)) != len(call_ids):
             raise AgentError("invalid_tool_call", "工具请求编号缺失或重复")
-        
+
         work_messages.append(
             choice.message.model_dump(exclude_none=True)
         )
