@@ -14,11 +14,15 @@ from backend.file_access import CONFIRMABLE_FILES, read_file, resolve_confirmabl
 
 def preview_edit(path: str, old_text: str, new_text: str) -> str:#预览更改的代码
     """基于当前文件生成单处替换的文本差异；不写入、不执行、不保存待应用补丁。"""
+    # 输入：path为固定白名单项目相对路径str，old_text为精确且唯一的非空原文，new_text为替换正文str（可为空）。
+    # 返回：unified diff字符串，包含文件标签、上下文和增删行；只读原文件，不保存提案、不修改或执行代码。
     return _build_edit_diff(path, read_file(path), old_text, new_text)
 
 
 def _build_edit_diff(path: str, source: str, old_text: str, new_text: str) -> str:
     """仅根据已读取的正文构造差异，不再次读取文件。"""
+    # 输入：path仅作差异文件标签；source为已读完整正文str，old_text/new_text为替换前后文本str。
+    # 返回：单处替换的unified diff字符串；检查原文唯一性、实际变化及大小，不读取或写入任何文件。
     if not isinstance(old_text, str) or not old_text:
         raise AgentError("invalid_tool_arguments", "old_text必须是非空字符串")
     if not isinstance(new_text, str):
@@ -57,6 +61,9 @@ def _build_edit_diff(path: str, source: str, old_text: str, new_text: str) -> st
 
 
 def create_proposal(path: str, old_text: str, new_text: str) -> dict:
+    # 输入：path为项目相对路径str，old_text/new_text为替换前后正文str。
+    # 返回：dict，含id/path/old_text/new_text/diff；演练目标额外含同一次快照的before_sha256，不含数据库状态。
+    # 副作用：只读取文件和生成提案，不保存数据库、不应用修改；待应用检查须使用数据库读取的提案。
     snapshot = None
     if isinstance(path, str) and path in CONFIRMABLE_FILES:
         snapshot = read_confirmable_snapshot(path)
@@ -77,6 +84,9 @@ def create_proposal(path: str, old_text: str, new_text: str) -> dict:
 
 
 def read_confirmable_snapshot(path: str) -> dict[str, str]: #检查文件并生成文件指纹
+    # 输入：path为确认范围内的项目相对路径str，目前仅'workspace/demo.py'。
+    # 返回：{'content': UTF-8完整正文str, 'before_sha256': 原始字节的64字符SHA256字符串}，来自同一次读取。
+    # 说明：只读文件，限制20000字节；不判断用户确认或提案状态，路径/编码错误会抛AgentError。
     target = resolve_confirmable_file(path)
 
     try:
@@ -99,6 +109,9 @@ def read_confirmable_snapshot(path: str) -> dict[str, str]: #检查文件并生�
 
 
 def check_proposal_version(proposal: dict) -> dict[str, str]:#检查指纹是否正确
+    # 输入：proposal为数据库读取的提案dict，需含path、status='pending'及生成时保存的before_sha256。
+    # 返回：当前文件的content和before_sha256字典；状态、路径、缺失指纹或版本不符时抛AgentError。
+    # 说明：只读检查，通过不代表用户批准，也不是防止并发修改的文件锁。
     if proposal.get("status") != "pending":
         raise AgentError(
             "tool_rejected",
@@ -127,6 +140,9 @@ def check_proposal_version(proposal: dict) -> dict[str, str]:#检查指纹是否
 
 
 def prepare_proposal_change(proposal: dict) -> dict[str, str]:#生成修改后的文件
+    # 输入：proposal为待应用数据库提案dict，含path/status/before_sha256/old_text/new_text/diff。
+    # 返回：{'before_content': 修改前完整正文str, 'after_content': 修改后完整正文str}。
+    # 说明：核对版本和保存的diff后只构造字符串，不写文件或更新数据库；失败抛AgentError。
     snapshot = check_proposal_version(proposal)
     source = snapshot["content"]
 
@@ -156,6 +172,9 @@ def prepare_proposal_change(proposal: dict) -> dict[str, str]:#生成修改后�
 
 
 def backup_proposal_source(proposal: dict) -> Path:#生成备份的文件
+    # 输入：proposal为可通过状态、路径、版本和差异检查的数据库提案dict。
+    # 返回：新备份文件的Path；实际在runtime/edit_backups写入原文件字节，同名备份不覆盖。
+    # 说明：不改目标文件或数据库状态；备份创建/写入失败可能抛OSError。
     prepared = prepare_proposal_change(proposal)
     original_bytes = prepared["before_content"].encode("utf-8")
 
@@ -171,6 +190,9 @@ def backup_proposal_source(proposal: dict) -> Path:#生成备份的文件
 
 
 def write_proposal_change(proposal: dict) -> Path:
+    # 输入：proposal为已由上层确认流程取得的数据库提案dict；自身不取得用户确认。
+    # 返回：原内容备份文件Path；成功时实际替换workspace/demo.py，保留普通权限位并清理临时文件。
+    # 说明：校验、备份、临时文件写入、再次版本检查、os.replace；不更新数据库、不执行代码。文件操作异常不保证目标未变。
     prepared = prepare_proposal_change(proposal)
     target = resolve_confirmable_file(proposal["path"])
 

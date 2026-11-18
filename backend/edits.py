@@ -12,6 +12,9 @@ def apply_proposal(
     conversation_id: str,
     proposal_id: str,
 ) -> dict:
+    # 输入：conversation_id和proposal_id为str，仅按编号从数据库读取提案；用户确认和来源检查由HTTP入口负责。
+    # 返回：成功时{'proposal_id': 提案编号, 'status': 'applied'}；失败抛AgentError。
+    # 副作用：在进程内锁中检查、备份并实际修改演练文件，再记录数据库状态和备份路径；文件与数据库不是联合事务。
     with _apply_lock:
         proposal = load_proposal(conversation_id, proposal_id)
 

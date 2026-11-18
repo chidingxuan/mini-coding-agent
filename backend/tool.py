@@ -3,7 +3,7 @@
 import json
 
 from backend.errors import AgentError
-from backend.file_access import read_file, list_files, search_code, read_lines
+from backend.file_access import read_file, list_files, search_code, read_lines, list_workspace_files
 from backend.proposal_files import preview_edit, create_proposal
 from backend.tool_schemas import TOOLS
 
@@ -13,8 +13,11 @@ def execute_tool(name: str,
                  *,
                  edit_proposals: list[dict] | None = None,
                  ) -> str: #检查工具
+    # 输入：name为工具名str，arguments为JSON对象字符串；edit_proposals为共享提案列表或None。
+    # 返回：工具结果str，列表和提案会编码成JSON字符串；不支持的工具或不合格参数抛AgentError。
+    # 副作用：create_proposal成功时向传入列表append提案；这里不保存数据库，也不执行确认写入。
     if not isinstance(name, str) or name not in {
-        "read_file", "list_files", "search_code", "read_lines", "preview_edit", "create_proposal",
+        "read_file", "list_files", "search_code", "read_lines", "preview_edit", "create_proposal", "list_workspace_files"
     }:
         raise AgentError("tool_rejected", "不支持这个工具")
 
@@ -34,6 +37,16 @@ def execute_tool(name: str,
             raise AgentError("invalid_tool_arguments", "list_files不接受参数")
 
         return json.dumps(list_files(), ensure_ascii=False)
+
+    if name == "list_workspace_files":
+        if args:
+            raise AgentError(
+                "invalid_tool_arguments",
+                "list_workspace_files不接受参数",
+            )
+
+        return json.dumps(list_workspace_files(), ensure_ascii=False)
+
     if name == "search_code":
         if set(args) != {"query"} or not isinstance(args["query"], str):
             raise AgentError(

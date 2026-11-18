@@ -8,6 +8,8 @@ from openai import (
 
 class AgentError(ValueError):
     def __init__(self, code: str, message: str, status_code: int = 502):
+        # 输入：self为错误实例，code为错误码str，message为可展示说明str，status_code为HTTP状态码int（默认502）。
+        # 返回：None；初始化错误对象的消息、code和status_code，本身不抛出该错误，也不联网或写文件。
         super().__init__(message)
         self.code = code
         self.status_code = status_code
@@ -15,6 +17,8 @@ class AgentError(ValueError):
 
 def model_request_error(error: OpenAIError) -> AgentError:
     """将已知SDK失败转换成固定错误码，不回显error的原始内容。"""
+    # 输入：error为SDK抛出的OpenAIError异常对象。
+    # 返回：对应的AgentError对象，由调用方决定是否raise；不回显SDK异常全文，不重试请求。
     if isinstance(error, APITimeoutError):
         return AgentError("model_timeout", "模型请求超时，请稍后手动重试", 504)
     if isinstance(error, APIConnectionError):

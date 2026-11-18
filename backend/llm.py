@@ -9,6 +9,9 @@ def request_model(
     messages: list[dict],
     tools: list[dict] | None = None,
 ):
+    # 输入：client为OpenAI SDK客户端，model为模型名str，messages为消息字典列表，tools为说明列表或None。
+    # 返回：SDK原始ChatCompletion响应对象，不是回答字符串；会联网调用模型，可能产生费用。
+    # 异常：模型名无效或SDK请求失败转为AgentError；本函数不做自动重试循环。
     if not isinstance(model, str) or not model.strip():
         raise AgentError("configuration_error", "未配置模型名称，请检查后端.env", 503)
     try:
@@ -29,6 +32,9 @@ def ask_model(
     messages: list[dict],
 ) -> str:
     # 在这里迁移已有的请求和响应检查代码
+    # 输入：client为SDK客户端，model为模型名str，messages为消息字典列表。
+    # 返回：完整且非空的模型回答str；会调用一次request_model，不执行工具、不修改历史列表。
+    # 异常：截断、拒答、空正文或非正常结束时抛AgentError，不把它们当成成功回答。
     response = request_model(
         client=client,
         model=model,
@@ -56,6 +62,9 @@ def ask_agent(
     edit_proposals: list[dict] | None = None,
 ) -> str:
     # 在这里串起模型请求、工具执行和最终回答
+    # 输入：client、model、messages用于真实模型请求；edit_proposals为调用方的提案收集列表或None。
+    # 返回：最终完整回答str；最多请求模型4次，每批最多执行3个工具请求，失败抛AgentError。
+    # 副作用：可能联网和执行获准的读取/提案工具，并append到共享提案列表；不修改输入messages，不保存数据库或确认写入。
     work_messages = [message.copy() for message in messages]
     max_model_calls = 4
 

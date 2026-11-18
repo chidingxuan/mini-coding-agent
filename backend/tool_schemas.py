@@ -36,6 +36,7 @@ TOOLS = [#把所有工具的介绍都放在这个list里
             },
         },
     },
+
     {
         "type": "function",
         "function": {
@@ -57,6 +58,7 @@ TOOLS = [#把所有工具的介绍都放在这个list里
             },
         },
     },
+
     {
         "type": "function",
         "function": {
@@ -89,6 +91,7 @@ TOOLS = [#把所有工具的介绍都放在这个list里
             },
         },
     },
+
     {
         "type": "function",
         "function": {
@@ -124,6 +127,7 @@ TOOLS = [#把所有工具的介绍都放在这个list里
             },
         },
     },
+
     {
         "type": "function",
         "function": {
@@ -155,6 +159,24 @@ TOOLS = [#把所有工具的介绍都放在这个list里
                     },
                 },
                 "required": ["path", "old_text", "new_text"],
+                "additionalProperties": False,
+            },
+        },
+    },
+
+    {
+    "type": "function",
+        "function": {
+            "name": "list_workspace_files",
+            "description": (
+                "列出目标工作区中的文件路径，不读取正文。"
+                "路径相对于workspace目录，例如demo.py。"
+                "排除部分敏感目录和文件，符合规则的文件超过200个时拒绝。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
                 "additionalProperties": False,
             },
         },

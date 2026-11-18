@@ -34,6 +34,7 @@ def test_dispatch_and_schema_keep_scope(pending):
     assert tool.execute_tool("read_file", '{"path":"workspace/demo.py"}') == "value = 1\n"
     assert {entry["function"]["name"] for entry in TOOLS} == {
         "read_file", "list_files", "search_code", "read_lines", "preview_edit", "create_proposal",
+        "list_workspace_files",
     }
     assert file_access.CONFIRMABLE_FILES == {"workspace/demo.py"}
     assert file_access.READABLE_FILES == {

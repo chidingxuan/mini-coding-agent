@@ -33,6 +33,8 @@ app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="asset
 
 @app.get("/", include_in_schema=False)
 def index():
+    # 输入：无函数参数；由浏览器GET /调用。
+    # 返回：指向前端index.html的FileResponse响应对象；不调用模型、不返回源代码或密钥。
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
@@ -44,6 +46,9 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 def chat(body: ChatRequest):
+    # 输入：body为已校验的ChatRequest，含question:str和conversation_id:str。
+    # 返回：dict，含answer:str及proposals:list；FastAPI将其编码为JSON响应。
+    # 副作用：真实调用模型/获准工具并在成功后保存问答和提案；不自动应用提案，业务失败转换为HTTP错误。
     if not body.question.strip():
         raise HTTPException(422, detail={"code": "invalid_input", "message": "问题不能为空"})
     if not api_key or not model:
@@ -97,10 +102,15 @@ def chat(body: ChatRequest):
         
 @app.get("/conversations")
 def get_conversations():
+    # 输入：无函数参数；由GET /conversations调用。
+    # 返回：{'conversations': 会话编号列表}，按最近消息排序；只查询数据库，不调用模型。
     return {"conversations": list_conversations()}
 
 @app.get("/conversations/{conversation_id}/messages")
 def get_messages(conversation_id: str):
+    # 输入：conversation_id为URL路径中的会话编号str。
+    # 返回：dict，含conversation_id、messages（带id的消息列表）、proposals（该会话提案列表）。
+    # 说明：无记录时两个列表为空；只读数据库，不调用模型或应用提案。
     return {
         "conversation_id": conversation_id,
         "messages": load_messages(conversation_id),
@@ -114,11 +124,15 @@ class ApplyProposalRequest(BaseModel):
     @field_validator("confirmed")
     @classmethod
     def require_confirmation(cls, value: bool) -> bool:
+        # 输入：cls为ApplyProposalRequest类；value为已通过StrictBool类型检查的bool，由Pydantic自动传入。
+        # 返回：仅True可返回；False抛ValueError，被Pydantic纳入校验错误，不代表身份认证或执行写入。
         if not value:
             raise ValueError("必须明确确认应用提案")
         return value
 
 def require_local_origin(request: Request) -> None:
+    # 输入：request为FastAPI Request，从headers读取Origin请求头。
+    # 返回：来源完整匹配两个获准本地地址时返回None，否则抛403 HTTPException；不执行文件操作。
     allowed_origins = {
         "http://127.0.0.1:8010",
         "http://localhost:8010",
@@ -141,6 +155,9 @@ def confirm_proposal(
     body: ApplyProposalRequest,
     request: Request,
 ):
+    # 输入：proposal_id为URL中的str，body为已校验的ApplyProposalRequest（会话编号及confirmed=True），request为请求对象。
+    # 返回：应用成功的dict，含proposal_id和status='applied'；来源不合格或业务失败转为HTTP错误。
+    # 副作用：通过来源检查后调用apply_proposal，可能实际备份和修改演练文件、更新数据库；不调用模型。
     require_local_origin(request)
 
     try:
